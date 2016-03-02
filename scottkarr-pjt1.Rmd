@@ -1,0 +1,122 @@
+---
+title: "Chess Project"
+author: "Scott Karr"
+date: "February 28, 2016"
+output:
+  html_document:
+    css: ./lab.css
+    highlight: pygments
+    theme: cerulean
+  pdf_document: default
+---
+
+0. Load Packages (these may not all be used)
+```{r load-pkgs, eval=TRUE}
+library(stringr)
+library(XML)
+library(RCurl)
+library(bitops)
+library(tau)
+library(plyr)
+library(dplyr)
+```
+
+referenced for initial load . . .
+<http://stackoverflow.com/questions/21114598/importing-a-text-file-into-r>
+
+1. Load Data Frame from website
+```{r load-text-by-line, eval=TRUE}
+theUrl <- "/Users/scottkarr/IS607Spring2016/project1/tournamentinfo.txt"
+l <- readLines(theUrl)
+```
+remove unnecessary lines
+```{r remove-header, eval=TRUE}
+l <- grep("^\\|?-+\\|?$|^$", l, value = TRUE, invert = TRUE)
+```
+
+split
+```{r delimit, eval=TRUE}
+lsplit <- strsplit(l, "\\s*\\|")
+```
+
+set names
+```{r name-columns, eval=TRUE}
+dat <- setNames(data.frame(do.call(rbind, lsplit[-1])[ ,-1]), paste(lsplit[[1]],lsplit[[2]])[-1])
+```
+
+add back last column name
+```{r name2-columns, eval=TRUE}
+colnames(dat)[10] <- "Pair Num"
+```
+
+1st 2 rows were combined for header so remove row 1 which is still left
+```{r remove-combined-row, eval=TRUE}
+dat <- dat[-c(1), ]
+```
+
+convert list to data frame
+```{r frame,eval=TRUE}
+df1 <- data.frame(dat)
+```
+subset child and parent recs
+```{r subset-into-parent&child, eval=TRUE}
+df1[,"IsChildRec"] <- str_detect(df1[,1],"[[:digit:]]{1,}")
+df1.Csub <- subset(df1,df1$IsChildRec == TRUE )
+df1.Psub <- subset(df1,df1$IsChildRec == FALSE )
+colnames(df1.Psub)[1]  <- "Name" 
+colnames(df1.Csub)[1]  <- "Name" 
+```
+
+build output dataframe
+```{r build-output-df, eval=TRUE}
+df1.Output <- data.frame(df1.Psub$Pair.Num)
+colnames(df1.Output)[1]  <- "ID"
+df1.Output["Name"] <- df1.Psub$Name
+df1.Output["State"] <- df1.Csub$Pair.Num
+df1.Output["Ttl-Pts"] <- df1.Psub$Total..Pts
+df1.Output["Pre-Rating"] <- str_trim(str_extract(str_trim(df1.Csub$Name), "[:blank:][:digit:]{1,4}"))
+df1.Output["Opp1"] <- as.numeric(str_extract(df1.Psub$Round...1, "[:digit:]{1,}$"))
+df1.Output["Opp2"] <- as.numeric(str_extract(df1.Psub$Round...2, "[:digit:]{1,}$"))
+df1.Output["Opp3"] <- as.numeric(str_extract(df1.Psub$Round...3, "[:digit:]{1,}$"))
+df1.Output["Opp4"] <- as.numeric(str_extract(df1.Psub$Round...4, "[:digit:]{1,}$"))
+df1.Output["Opp5"] <- as.numeric(str_extract(df1.Psub$Round...5, "[:digit:]{1,}$"))
+df1.Output["Opp6"] <- as.numeric(str_extract(df1.Psub$Round...6, "[:digit:]{1,}$"))
+df1.Output["Opp7"] <- as.numeric(str_extract(df1.Psub$Round...7, "[:digit:]{1,}$"))
+```
+
+Last derived column uses lapply to scan each row and apply  dplyr to filter indexed data point (scores).
+While lapply is perhaps more direct then nested loops, I'm uncomfortable with it.  Too much indirection.
+Should be able to collapse the hardcoded column indexes as well, but for another time.
+```{r apply-calc-avg, eval=TRUE}
+df1.Output["AvgOppScore"] <- 
+    unlist(
+        lapply(
+          1:nrow(df1.Output), 
+          function(i) {
+              mean(
+                c(
+                      as.numeric(dplyr::filter(df1.Output, as.numeric(ID) == df1.Output[i,6]+1)[5]),
+                      as.numeric(dplyr::filter(df1.Output, as.numeric(ID) == df1.Output[i,7]+1)[5]),
+                      as.numeric(dplyr::filter(df1.Output, as.numeric(ID) == df1.Output[i,8]+1)[5]),
+                      as.numeric(dplyr::filter(df1.Output, as.numeric(ID) == df1.Output[i,9]+1)[5]),
+                      as.numeric(dplyr::filter(df1.Output, as.numeric(ID) == df1.Output[i,10]+1)[5]),
+                      as.numeric(dplyr::filter(df1.Output, as.numeric(ID) == df1.Output[i,11]+1)[5]),
+                      as.numeric(dplyr::filter(df1.Output, as.numeric(ID) == df1.Output[i,12]+1)[5])                                              
+                ),
+                na.rm = TRUE
+              )                  
+            }
+          )
+        )  
+```
+
+remove opponent id references 
+```{r cleanup, eval=TRUE}
+df1.Output <- df1.Output[-c(6:12)]
+df1.Output
+```
+
+Export to .csv to your current working directory
+```{r export-as-csv, eval=TRUE}
+write.csv(df1.Output, file = "tournamentinfo.csv")
+```
